@@ -50,6 +50,19 @@ def get_unique_id():
     ])
 
 
+def _initialize_default_values(a, b):
+    """
+    Internal function that initializes one of the variables in a combine call
+    It is only called if that variable is None; avoids crashing when merging 2
+    vars at the top level and one of them doesn't exist already
+    """
+    if isinstance(b, MutableSequence):
+        a = []
+    elif isinstance(b, MutableMapping):
+        a = {}
+    return a
+
+
 def _validate_mutable_mappings(a, b):
     """
     Internal convenience function to ensure arguments are MutableMappings
@@ -62,7 +75,7 @@ def _validate_mutable_mappings(a, b):
     # If this becomes generally needed, change the signature to operate on
     # a variable number of arguments instead.
 
-    if not (isinstance(a, MutableMapping) and isinstance(b, MutableMapping)):
+    if not (isinstance(a, MutableMapping) and isinstance(b, MutableMapping)) and not (isinstance(a, MutableSequence) and isinstance(b, MutableSequence)):
         myvars = []
         for x in [a, b]:
             try:
@@ -80,7 +93,10 @@ def combine_vars(a, b, merge=None):
     """
 
     if merge or merge is None and C.DEFAULT_HASH_BEHAVIOUR == "merge":
-        return merge_hash(a, b)
+        # TCN: initialize empty variable if it's None
+        a = a if a is not None else _initialize_default_values(a, b)
+        b = b if b is not None else _initialize_default_values(b, a)
+        return merge_hash(a, b, True, 'append_rp')
 
     # HASH_BEHAVIOUR == 'replace'
     _validate_mutable_mappings(a, b)
@@ -117,6 +133,21 @@ def merge_hash(x, y, recursive=True, list_merge='replace'):
     #  except performance)
     if not recursive and list_merge == 'replace':
         x.update(y)
+        return x
+
+    # TCN: make sure that 2 dicts at top level CAN be merged
+    if isinstance(x, MutableSequence) and isinstance(y, MutableSequence):
+        if list_merge == 'replace':
+            # replace x value by y's one as it has higher priority
+            x = y
+        elif list_merge == 'append':
+            x = x + y
+        elif list_merge == 'prepend':
+            x = y + x
+        elif list_merge == 'append_rp':
+            x = [z for z in x if z not in y] + y
+        elif list_merge == 'prepend_rp':
+            x = y + [z for z in x if z not in y]
         return x
 
     # insert each element of y in x, overriding the one in x
